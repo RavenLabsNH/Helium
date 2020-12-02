@@ -3,16 +3,10 @@
  */
 #include "LoRaWan_APP.h"
 #include "Arduino.h"
-#include "GPS_Air530.h"
 #include "cubecell_SSD1306Wire.h"
 
 extern SSD1306Wire  display; 
 
-//when gps waked, if in GPS_UPDATE_TIMEOUT, gps not fixed then into low power mode
-#define GPS_UPDATE_TIMEOUT 5000
-
-//once fixed, GPS_CONTINUE_TIME later into low power mode
-#define GPS_CONTINUE_TIME 700
 /*
    set LoraWan_RGB to Active,the RGB active in loraWan
    RGB red means sending;
@@ -42,7 +36,7 @@ LoRaMacRegion_t loraWanRegion = ACTIVE_REGION;
 DeviceClass_t  loraWanClass = LORAWAN_CLASS;
 
 /*the application data transmission duty cycle.  value in [ms].*/
-uint32_t appTxDutyCycle = 8700;
+uint32_t appTxDutyCycle = 7000;
 
 /*OTAA or ABP*/
 bool overTheAirActivation = LORAWAN_NETMODE;
@@ -96,94 +90,6 @@ void VextOFF(void) //Vext default OFF
   pinMode(Vext,OUTPUT);
   digitalWrite(Vext, HIGH);
 }
-void displayGPSInof()
-{
-  char str[30];
-  display.clear();
-  display.setFont(ArialMT_Plain_10);
-  int index = sprintf(str,"%02d-%02d-%02d",Air530.date.year(),Air530.date.day(),Air530.date.month());
-  str[index] = 0;
-  display.setTextAlignment(TEXT_ALIGN_LEFT);
-  display.drawString(0, 0, str);
-  
-  index = sprintf(str,"%02d:%02d:%02d",Air530.time.hour(),Air530.time.minute(),Air530.time.second(),Air530.time.centisecond());
-  str[index] = 0;
-  display.drawString(60, 0, str);
-
-  if( Air530.location.age() < 1000 )
-  {
-    display.drawString(120, 0, "A");
-  }
-  else
-  {
-    display.drawString(120, 0, "V");
-  }
-  
-  index = sprintf(str,"alt: %d.%d",(int)Air530.altitude.meters(),fracPart(Air530.altitude.meters(),2));
-  str[index] = 0;
-  display.drawString(0, 16, str);
-   
-  index = sprintf(str,"hdop: %d.%d",(int)Air530.hdop.hdop(),fracPart(Air530.hdop.hdop(),2));
-  str[index] = 0;
-  display.drawString(0, 32, str); 
- 
-  index = sprintf(str,"lat :  %d.%d",(int)Air530.location.lat(),fracPart(Air530.location.lat(),4));
-  str[index] = 0;
-  display.drawString(60, 16, str);   
-  
-  index = sprintf(str,"lon:%d.%d",(int)Air530.location.lng(),fracPart(Air530.location.lng(),4));
-  str[index] = 0;
-  display.drawString(60, 32, str);
-
-  index = sprintf(str,"speed: %d.%d km/h",(int)Air530.speed.kmph(),fracPart(Air530.speed.kmph(),3));
-  str[index] = 0;
-  display.drawString(0, 48, str);
-  display.display();
-}
-
-void printGPSInof()
-{
-  Serial.print("Date/Time: ");
-  if (Air530.date.isValid())
-  {
-    Serial.printf("%d/%02d/%02d",Air530.date.year(),Air530.date.day(),Air530.date.month());
-  }
-  else
-  {
-    Serial.print("INVALID");
-  }
-
-  if (Air530.time.isValid())
-  {
-    Serial.printf(" %02d:%02d:%02d.%02d",Air530.time.hour(),Air530.time.minute(),Air530.time.second(),Air530.time.centisecond());
-  }
-  else
-  {
-    Serial.print(" INVALID");
-  }
-  Serial.println();
-  
-  Serial.print("LAT: ");
-  Serial.print(Air530.location.lat(),6);
-  Serial.print(", LON: ");
-  Serial.print(Air530.location.lng(),6);
-  Serial.print(", ALT: ");
-  Serial.print(Air530.altitude.meters());
-
-  Serial.println(); 
-  
-  Serial.print("SATS: ");
-  Serial.print(Air530.satellites.value());
-  Serial.print(", HDOP: ");
-  Serial.print(Air530.hdop.hdop());
-  Serial.print(", AGE: ");
-  Serial.print(Air530.location.age());
-  Serial.print(", COURSE: ");
-  Serial.print(Air530.course.deg());
-  Serial.print(", SPEED: ");
-  Serial.println(Air530.speed.kmph());
-  Serial.println();
-}
 
 static void prepareTxFrame( uint8_t port )
 {
@@ -195,103 +101,13 @@ static void prepareTxFrame( uint8_t port )
     the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
   */
 
-  uint32_t lat, lon;
-  int  alt, course, speed, hdop, sats;
   
-  Serial.println("Waiting for GPS FIX ...");
-
-  VextON();// oled power on;
-  delay(10); 
-  display.init();
-  display.clear();
-      
-  display.setTextAlignment(TEXT_ALIGN_CENTER);
-  display.setFont(ArialMT_Plain_16);
-  display.drawString(64, 32-16/2, "GPS Searching...");
-  Serial.println("GPS Searching...");
-  display.display();
-  
-  Air530.begin();
-
-  uint32_t start = millis();
-  while( (millis()-start) < GPS_UPDATE_TIMEOUT )
-  {
-    while (Air530.available() > 0)
-    {
-      Air530.encode(Air530.read());
-    }
-   // gps fixed in a second
-    if( Air530.location.age() < 1000 )
-    {
-      break;
-    }
-  }
-  
-  //if gps fixed,  GPS_CONTINUE_TIME later stop GPS into low power mode, and every 1 second update gps, print and display gps info
-  if(Air530.location.age() < 1000)
-  {
-    start = millis();
-    uint32_t printinfo = 0;
-    while( (millis()-start) < GPS_CONTINUE_TIME )
-    {
-      while (Air530.available() > 0)
-      {
-        Air530.encode(Air530.read());
-      }
-
-      if( (millis()-start) > printinfo )
-      {
-        printinfo += 1000;
-        printGPSInof();
-        displayGPSInof();
-      }
-    }
-  }
-  else
-  {
-    display.clear();  
-    display.setTextAlignment(TEXT_ALIGN_CENTER);
-    display.setFont(ArialMT_Plain_16);
-    display.drawString(64, 32-16/2, "No GPS signal");
-    Serial.println("No GPS signal");
-    display.display();
-    delay(2000);
-  }
-  Air530.end(); 
-  display.clear();
-  display.display();
-  display.stop();
-  VextOFF(); //oled power off
-  
-  lat = (uint32_t)(Air530.location.lat()*1E7);
-  lon = (uint32_t)(Air530.location.lng()*1E7);
-  alt = (uint16_t)Air530.altitude.meters();
-  course = Air530.course.deg();
-  speed = Air530.speed.kmph();
-  sats = Air530.satellites.value();
-  hdop = Air530.hdop.hdop();
-
+ 
   uint16_t batteryVoltage = getBatteryVoltage();
   unsigned char *puc;
   appDataSize = 0;
 
-  puc = (unsigned char *)(&lat);
-  appData[appDataSize++] = puc[3];
-  appData[appDataSize++] = puc[2];
-  appData[appDataSize++] = puc[1];
-  appData[appDataSize++] = puc[0];
-
-  puc = (unsigned char *)(&lon);
-  appData[appDataSize++] = puc[3];
-  appData[appDataSize++] = puc[2];
-  appData[appDataSize++] = puc[1];
-  appData[appDataSize++] = puc[0];
-  
-  puc = (unsigned char *)(&alt);
-  appData[appDataSize++] = puc[1];
-  appData[appDataSize++] = puc[0];
-  
-  puc = (unsigned char *)(&sats);
+  puc = (unsigned char *)(&batteryVoltage);
   appData[appDataSize++] = puc[1];
   appData[appDataSize++] = puc[0];
 
@@ -300,21 +116,6 @@ static void prepareTxFrame( uint8_t port )
   appData[appDataSize++] = (uint8_t)batteryVoltage;
   */
 
-  puc = (unsigned char *)(&lat);
-  Serial.println(lat,DEC);
-  
-  Serial.print("Hex");
-  Serial.println(*puc,HEX);
-  Serial.print("Dec");
-  Serial.println(*puc,DEC);
-
-  int temp = ((puc[3] << 24) | (puc[2] << 16) | (puc[1] << 8) | puc[0]);
-  unsigned char *puc2;
-  puc2= (unsigned char *)&temp;
-  
-  // Serial.println(temp);
-//   Serial.println(temp);
-//   Serial.println(&temp); 
   
   Serial.print(" BatteryVoltage:");
   Serial.println(batteryVoltage);
@@ -329,19 +130,26 @@ void downLinkDataHandle(McpsIndication_t *mcpsIndication)
   {
     Serial.printf("%c",mcpsIndication->Buffer[i]);
   }
-  Serial.println();
+  Serial.println(); 
   uint32_t color=mcpsIndication->Buffer[0]<<16|mcpsIndication->Buffer[1]<<8|mcpsIndication->Buffer[2];
   
   char str[40];
   char str1[40];
-  strcat(str, " MSG: ");
   memcpy(str1, mcpsIndication->Buffer, mcpsIndication->BufferSize);
   strcat(str, str1);
-  display.clear();
+  /*display.clear();
   display.setFont(ArialMT_Plain_10);
   display.setTextAlignment(TEXT_ALIGN_LEFT);
   display.drawString(18, 40, str);
   
+  diplay.display();*/
+
+  VextON();
+
+  display.clear();  
+  display.setTextAlignment(TEXT_ALIGN_LEFT);
+  display.setFont(ArialMT_Plain_16);
+  display.drawString(18, 28, str);
   display.display();
 
   
