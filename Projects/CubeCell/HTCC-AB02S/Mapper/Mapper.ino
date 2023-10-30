@@ -1,4 +1,4 @@
-/* The example is for CubeCell_GPS,
+   /* The example is for CubeCell_GPS,
  * GPS works only before lorawan uplink, the board current is about 45uA when in lowpower mode.
  */
 #include "LoRaWan_APP.h"
@@ -16,13 +16,15 @@ Air530ZClass Air530;
 
 extern SSD1306Wire  display;
 
+#define DISPLAY_GPS 0
+
 //How long to wait for GPS Fix if no fix in 2 minutes send update
 #define GPS_UPDATE_TIMEOUT 120000
 
 //Wait 5 Seconds after FIX for GPS to stabalise
-#define GPS_CONTINUE_TIME 10000
+#define GPS_CONTINUE_TIME 5000
 #define MOVING_UPDATE_RATE 5000 //in addition to GPS_CONTINUE_TIME
-#define STOPPED_UPDATE_RATE 60000 //In addition to GPS_CONTINUE_TIME
+#define STOPPED_UPDATE_RATE 5000 //In addition to GPS_CONTINUE_TIME
 #define SLEEPING_UPDATE_RATE 21600000 //Update every 6hrs when sleeping
 bool sleepMode = false;
 int speedcount;
@@ -31,22 +33,17 @@ float speedtot;
    set LoraWan_RGB to Active,the RGB active in loraWan
    RGB red means sending;
    RGB purple means joined done;
-   RGB blue means RxWindow1;
+   RGB blue means RxWin dow1;
    RGB yellow means RxWindow2;
    RGB green means received done;
 */
 
 /* OTAA para*/
 
-//uint8_t devEui[] = { 0x1C, 0x96, 0x17, 0xFD, 0x82, 0x11, 0xC8, 0x64 };  // Jeff
-//uint8_t devEui[] = { 0x60, 0x81, 0xF9, 0x62, 0xC7, 0x07, 0x52, 0xCC }; //EBike-Asset-1
-//uint8_t devEui[] = { 0x60, 0x81, 0xF9, 0x4C, 0xB1, 0xFF, 0x15, 0x86 }; //EBike-Asset-2
-//uint8_t devEui[] = { 0x60, 0x81, 0xF9, 0x90, 0xF4, 0x6F, 0xC0, 0x32 }; //EBike-Asset-3
-uint8_t devEui[] = { 0x60, 0x81, 0xF9, 0x0C, 0xF6, 0x67, 0x56, 0x4A }; //EBike-Asset-4
-//uint8_t devEui[] = { 0xC5, 0x13, 0x63, 0x1A, 0xD1, 0xDE, 0x6A, 0xF0 }; // Kyles Mapper
-//uint8_t devEui[] = { 0x84, 0x91, 0x8A, 0x11, 0xA3, 0x1A, 0x85, 0x08 }; //Grants Mapper
-uint8_t appEui[] = { 0xD7, 0x52, 0xA4, 0x68, 0x97, 0xE2, 0xA2, 0x34 };
-uint8_t appKey[] = { 0x93, 0xE0, 0x7D, 0x4A, 0x93, 0x80, 0x8E, 0xD8, 0xCA, 0xD7, 0x05, 0x8A, 0x60, 0xEA, 0xB6, 0x26 };
+uint8_t devEui[] = { 0xC5, 0xF6, 0xE5, 0xDF, 0x4A, 0xC3, 0xA4, 0x92 };
+
+uint8_t appEui[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
+uint8_t appKey[] = { 0xC5, 0x3A, 0xF5, 0x69, 0x94, 0xF4, 0xD5, 0xC1, 0x07, 0x4F, 0x99, 0xB8, 0x1D, 0x5B, 0x25, 0xF1 };
 
 /* ABP para*/
 uint8_t nwkSKey[] = { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
@@ -213,7 +210,7 @@ void displayGPSInof()
   }
 
 
-  if( (speedtot/speedcount) > 1.2 )
+  if( (speedtot/speedcount) > 3.4 )
   {
     display.drawString(107, 0, "M");
   }
@@ -296,23 +293,12 @@ void printGPSInof()
   Serial.println(speedtot);
   Serial.print("SPEED Average: ");
   Serial.println(speedtot/speedcount);
-
-
-
   
   Serial.println();
 }
 
 static void prepareTxFrame( uint8_t port )
 {
-  /*appData size is LORAWAN_APP_DATA_MAX_SIZE which is defined in "commissioning.h".
-    appDataSize max value is LORAWAN_APP_DATA_MAX_SIZE.
-    if enabled AT, don't modify LORAWAN_APP_DATA_MAX_SIZE, it may cause system hanging or failure.
-    if disabled AT, LORAWAN_APP_DATA_MAX_SIZE can be modified, the max value is reference to lorawan region and SF.
-    for example, if use REGION_CN470,
-    the max value for different DR can be found in MaxPayloadOfDatarateCN470 refer to DataratesCN470 and BandwidthsCN470 in "RegionCN470.h".
-  */
-
   uint32_t lat, lon;
   int  alt, course, speed, hdop, sats;
   float batteryLevel;
@@ -346,6 +332,12 @@ static void prepareTxFrame( uint8_t port )
     uint32_t printinfo = 0;
     speedcount = 0;
     speedtot = 0;
+#if(DISPLAY_GPS == 0)
+    display.clear();
+    display.display();
+    display.stop();
+#endif
+    
     while( (millis()-start) < GPS_CONTINUE_TIME )
     {
       while (Air530.available() > 0)
@@ -359,7 +351,9 @@ static void prepareTxFrame( uint8_t port )
         speedtot += Air530.speed.kmph();
         printinfo += 1000;
         printGPSInof();
+#if(DISPLAY_GPS)
         displayGPSInof();
+#endif
       }
     }
   }
@@ -376,9 +370,11 @@ static void prepareTxFrame( uint8_t port )
   }
     
     Air530.end(); 
+#if(DISPLAY_GPS)
     display.clear();
     display.display();
     display.stop();
+#endif
     VextOFF(); //oled power off
   
   lat = (uint32_t)(Air530.location.lat()*1E7);
@@ -452,10 +448,6 @@ static void prepareTxFrame( uint8_t port )
   Serial.println(sleepMode);
   Serial.println();
   }
-
-
-  
-  
 }
 
 
@@ -546,7 +538,7 @@ void loop()
         delay(1000);
         display.stop();
         VextOFF();// oled power off;
-        deviceState = DEVICE_STATE_CYCLE;
+        deviceState = DEVICE_STATE_SEND;
       }
       break;
     }
@@ -556,7 +548,7 @@ void loop()
       if (sleepMode) appTxDutyCycle = SLEEPING_UPDATE_RATE;
       else
       {
-        if ( (speedtot/speedcount) > 1.2) 
+        if ( (speedtot/speedcount) > 3.4) 
         {
         appTxDutyCycle = MOVING_UPDATE_RATE;
         Serial.println();
